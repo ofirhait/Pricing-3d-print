@@ -86,14 +86,15 @@ def currency(n: float) -> str:
 def currency2(n: float) -> str:
     return f"{n:,.2f} ₪".replace(",", ",")
 
-def discount_factor(qty: int) -> float:
+def discount_factor(qty: int):
+    """Returns (factor, percent) with exact steps: 10%, 20%, 25%."""
     if 1 < qty <= 30:
-        return 0.9
+        return 0.90, 10
     if 30 < qty <= 100:
-        return 0.8
+        return 0.80, 20
     if qty > 100:
-        return 0.75
-    return 1.0
+        return 0.75, 25
+    return 1.00, 0
 
 def read_rates_from_sheet(wb: openpyxl.Workbook):
     ws = wb.active
@@ -209,7 +210,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
     unit_price_excl_modeling = (cost_sum_all - modeling_cost)
 
     qty = int(inputs.units_qty or 0)
-    disc = discount_factor(qty)
+    disc, disc_pct = discount_factor(qty)
     total = mround(modeling_cost + unit_price_excl_modeling * qty * disc, 5)
 
     df = pd.DataFrame(rows)
@@ -222,6 +223,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
         "unit_price": unit_price_excl_modeling,
         "qty": qty,
         "discount": disc,
+        "discount_pct": disc_pct,
         "total": total,
         "project": inputs.project_name,
     }
@@ -253,11 +255,11 @@ def render_pdf(result: dict) -> bytes:
     # Logo (bigger)
     logo_path = Path(__file__).parent / "logo.jpeg"
     if logo_path.exists():
-        logo_w = 65*mm
-        logo_h = 24*mm
+        logo_w = 90*mm
+        logo_h = 33*mm
         c.drawImage(str(logo_path), width - x - logo_w, y - logo_h + 4*mm,
                     width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
-    y -= 26*mm
+    y -= 35*mm
 
     c.setFont("DejaVuSans", 18)
     c.drawRightString(width - x, y, he("סיכום תמחור"))
@@ -273,7 +275,7 @@ def render_pdf(result: dict) -> bytes:
     y -= 7*mm
     c.drawRightString(width - x, y, he(f"כמות: {result['qty']}"))
     y -= 7*mm
-    c.drawRightString(width - x, y, he(f"הנחת כמות: {int((1-result['discount'])*100)}%"))
+    c.drawRightString(width - x, y, he(f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"))
     y -= 7*mm
     c.setFont("DejaVuSans", 14)
     c.drawRightString(width - x, y, he(f"סה\"כ: {currency(result['total'])}"))
@@ -383,10 +385,36 @@ st.markdown(
     """
     <style>
     html, body, [class*="css"]  { direction: rtl; }
-    .block-container {padding-top: 0.8rem; padding-bottom: 2rem; max-width: 820px;}
-    h1,h2,h3,h4,h5,h6,p,label,div,span { text-align: right; }
+    .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
+    h1, h2, h3, h4, h5, h6, p, label, div, span { text-align: right; }
     input, textarea { text-align: right !important; }
-    .stMarkdown { margin-bottom: 0.2rem; }
+
+    /* --- AgGrid (data_editor & many dataframes) RTL --- */
+    .ag-root, .ag-header, .ag-body, .ag-center-cols-container, .ag-row, .ag-cell, .ag-header-cell, .ag-header-row {
+        direction: rtl !important;
+    }
+    .ag-header-cell-label, .ag-cell {
+        justify-content: flex-end !important;
+        text-align: right !important;
+    }
+    .ag-cell {
+        white-space: normal !important;
+        line-height: 1.25 !important;
+        overflow: visible !important;
+        padding-right: 10px !important;
+        padding-left: 10px !important;
+    }
+    .ag-header-cell-text {
+        text-align: right !important;
+        white-space: normal !important;
+    }
+
+    /* Make columns resize nicer on mobile */
+    div[data-testid="stDataFrame"] .ag-root-wrapper, div[data-testid="stDataEditor"] .ag-root-wrapper {
+        width: 100% !important;
+    }
+
+    .stDownloadButton button {border-radius: 10px;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -539,7 +567,7 @@ summary_df["עלות"] = summary_df["עלות"].map(currency2)
 st.metric("סה״כ", currency(result["total"]))
 st.caption(
     f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])} | "
-    f"הנחת כמות: {int((1-result['discount'])*100)}%"
+    f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"
 )
 
 st.dataframe(summary_df, use_container_width=True, hide_index=True)
