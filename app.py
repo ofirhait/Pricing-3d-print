@@ -466,42 +466,6 @@ def write_back_to_xlsx(template_wb: openpyxl.Workbook, inputs: Inputs, result: d
     return out.getvalue()
 
 
-def num_stepper(label: str, key: str, value, step, min_value, is_int: bool = False):
-    """
-    Mobile-friendly +/- controls (work even when native steppers don't).
-    Stores canonical value in st.session_state[key].
-    """
-    if key not in st.session_state:
-        st.session_state[key] = int(value) if is_int else float(value)
-    if f"{key}_input" not in st.session_state:
-        st.session_state[f"{key}_input"] = st.session_state[key]
-
-    c1, c2, c3 = st.columns([1, 5, 1], vertical_alignment="center")
-    with c1:
-        if st.button("−", key=f"{key}_minus"):
-            v = st.session_state[key] - step
-            if v < min_value:
-                v = min_value
-            v = int(v) if is_int else float(v)
-            st.session_state[key] = v
-            st.session_state[f"{key}_input"] = v
-    with c3:
-        if st.button("+", key=f"{key}_plus"):
-            v = st.session_state[key] + step
-            v = int(v) if is_int else float(v)
-            st.session_state[key] = v
-            st.session_state[f"{key}_input"] = v
-    with c2:
-        v = st.number_input(
-            label,
-            min_value=min_value,
-            step=step,
-            value=st.session_state[f"{key}_input"],
-            key=f"{key}_input",
-        )
-        v = int(v) if is_int else float(v)
-        st.session_state[key] = v
-    return st.session_state[key]
 
 # ---------------------------
 # UI
@@ -515,6 +479,10 @@ st.markdown(
     h1, h2, h3, h4, h5, h6, p, label, div, span { text-align: right; }
     input, textarea { text-align: right !important; }
     .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
+/* Keep iOS number steppers working under RTL */
+input[type="number"] { direction: ltr !important; text-align: right !important; }
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -609,7 +577,7 @@ for i in range(3):
                            index=material_names.index(default_lines[i]["חומר"]) if default_lines[i]["חומר"] in material_names else 0,
                            key=f"mat{i}")
     with c2:
-        grams = num_stepper(f"גרמים {i+1}", key=f"grams{i}", value=float(default_lines[i]["גרמים"]), step=1.0, min_value=0.0, is_int=False)
+        grams = st.number_input(f"גרמים {i+1}", min_value=0.0, step=1.0, value=float(default_lines[i]["גרמים"]), key=f"grams{i}")
     mat_lines.append({"חומר": mat, "גרמים": grams})
 
 st.markdown("**עבודה**")
@@ -624,15 +592,15 @@ with c3:
 st.markdown("**תוספות**")
 c1, c2, c3 = st.columns(3)
 with c1:
-    magnets_qty = num_stepper("כמות מגנטים", key="magnets_qty", value=int(default_magnets), step=1, min_value=0, is_int=True)
+    magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=int(default_magnets))
 with c2:
-    led_single_qty = num_stepper("כמות לד בודד", key="led_single_qty", value=int(default_led_single), step=1, min_value=0, is_int=True)
+    led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=int(default_led_single))
 with c3:
-    led_desk_qty = num_stepper("כמות לד שולחני", key="led_desk_qty", value=int(default_led_desk), step=1, min_value=0, is_int=True)
+    led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
 
 st.markdown("---")
 st.subheader("כמות יחידות")
-units_qty = num_stepper("כמות יחידות", key="units_qty", value=int(default_units), step=1, min_value=0, is_int=True)
+units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
 
 
 inputs = Inputs(
