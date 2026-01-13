@@ -419,7 +419,7 @@ project_name = st.text_input("שם פרויקט", value=str(default_project))
 # ---- מחירים ----
 st.subheader("מחירים של פילמנטים")
 materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
-materials_df = pd.DataFrame([{"חומר": k, "מחיר לק"ג": v} for k, v in materials_per_kg.items()])
+materials_df = pd.DataFrame([{"חומר": k, "מחיר לק\"ג": v} for k, v in materials_per_kg.items()])
 materials_df = st.data_editor(
     materials_df,
     hide_index=True,
@@ -427,10 +427,10 @@ materials_df = st.data_editor(
     num_rows="fixed",
     column_config={
         "חומר": st.column_config.TextColumn("חומר", disabled=True),
-        "מחיר לק"ג": st.column_config.NumberColumn("מחיר לק"ג", min_value=0.0, step=1.0),
+        "מחיר לק\"ג": st.column_config.NumberColumn("מחיר לק\"ג", min_value=0.0, step=1.0),
     },
 )
-materials_per_kg = {row["חומר"]: float(row["מחיר לק"ג"] or 0.0) for _, row in materials_df.iterrows()}
+materials_per_kg = {row["חומר"]: float(row["מחיר לק\"ג"] or 0.0) for _, row in materials_df.iterrows()}
 
 st.subheader("מחיר עבודה (מידול/הדפסה/הרכבה)")
 work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
@@ -528,7 +528,7 @@ result = compute(inputs, materials_per_kg, work_per_h, addons_price)
 st.markdown("---")
 
 # ---- Summary ----
-st.subheader("טבלת סיכום עלויות וכמויות עם סה"כ")
+st.subheader("טבלת סיכום עלויות וכמויות עם סה\"כ")
 
 # טבלת סיכום (מצומצמת וברורה)
 summary_df = result["breakdown_df"].copy()
