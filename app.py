@@ -347,7 +347,7 @@ def render_pdf(result: dict) -> bytes:
     y -= 65*mm
 
     c.setFont("DejaVuSans", 18)
-    c.drawRightString(width - x, y, he("סיכום תמחור"))
+    c.drawRightString(width - x, y, he("הצעת מחיר - הדפסת תלת מימד"))
     y -= 10*mm
     c.setFont("DejaVuSans", 12)
     c.drawRightString(width - x, y, he(f"פרויקט: {result['project']}"))
@@ -371,6 +371,7 @@ def render_pdf(result: dict) -> bytes:
 
     df = result["breakdown_df"].copy()
     df = df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
+    df = df[df["כמות"].astype(float) != 0].reset_index(drop=True)
 
     c.setFont("DejaVuSans", 11)
     c.drawRightString(width - x, y, he("פירוט עלויות"))
@@ -591,7 +592,11 @@ with c2:
 with c3:
     led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
 
+st.markdown("---")
+st.subheader("כמות יחידות")
 units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
+
+
 inputs = Inputs(
     project_name=project_name,
     material_lines=mat_lines,
@@ -616,6 +621,7 @@ summary_df = result["breakdown_df"].copy()
 summary_df = summary_df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
 # Round quantities for display (avoid long floats)
 summary_df["כמות"] = summary_df["כמות"].astype(float).round(2)
+summary_df = summary_df[summary_df["כמות"] != 0].reset_index(drop=True)
 
 summary_df["מחיר ליחידה"] = summary_df["מחיר ליחידה"].map(currency2)
 summary_df["עלות"] = summary_df["עלות"].map(currency2)
