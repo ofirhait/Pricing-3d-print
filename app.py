@@ -465,6 +465,44 @@ def write_back_to_xlsx(template_wb: openpyxl.Workbook, inputs: Inputs, result: d
     template_wb.save(out)
     return out.getvalue()
 
+
+def num_stepper(label: str, key: str, value, step, min_value, is_int: bool = False):
+    """
+    Mobile-friendly +/- controls (work even when native steppers don't).
+    Stores canonical value in st.session_state[key].
+    """
+    if key not in st.session_state:
+        st.session_state[key] = int(value) if is_int else float(value)
+    if f"{key}_input" not in st.session_state:
+        st.session_state[f"{key}_input"] = st.session_state[key]
+
+    c1, c2, c3 = st.columns([1, 5, 1], vertical_alignment="center")
+    with c1:
+        if st.button("−", key=f"{key}_minus"):
+            v = st.session_state[key] - step
+            if v < min_value:
+                v = min_value
+            v = int(v) if is_int else float(v)
+            st.session_state[key] = v
+            st.session_state[f"{key}_input"] = v
+    with c3:
+        if st.button("+", key=f"{key}_plus"):
+            v = st.session_state[key] + step
+            v = int(v) if is_int else float(v)
+            st.session_state[key] = v
+            st.session_state[f"{key}_input"] = v
+    with c2:
+        v = st.number_input(
+            label,
+            min_value=min_value,
+            step=step,
+            value=st.session_state[f"{key}_input"],
+            key=f"{key}_input",
+        )
+        v = int(v) if is_int else float(v)
+        st.session_state[key] = v
+    return st.session_state[key]
+
 # ---------------------------
 # UI
 # ---------------------------
@@ -571,7 +609,7 @@ for i in range(3):
                            index=material_names.index(default_lines[i]["חומר"]) if default_lines[i]["חומר"] in material_names else 0,
                            key=f"mat{i}")
     with c2:
-        grams = st.number_input(f"גרמים {i+1}", min_value=0.0, step=1.0, value=float(default_lines[i]["גרמים"]), key=f"grams{i}")
+        grams = num_stepper(f"גרמים {i+1}", key=f"grams{i}", value=float(default_lines[i]["גרמים"]), step=1.0, min_value=0.0, is_int=False)
     mat_lines.append({"חומר": mat, "גרמים": grams})
 
 st.markdown("**עבודה**")
@@ -586,15 +624,15 @@ with c3:
 st.markdown("**תוספות**")
 c1, c2, c3 = st.columns(3)
 with c1:
-    magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=int(default_magnets))
+    magnets_qty = num_stepper("כמות מגנטים", key="magnets_qty", value=int(default_magnets), step=1, min_value=0, is_int=True)
 with c2:
-    led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=int(default_led_single))
+    led_single_qty = num_stepper("כמות לד בודד", key="led_single_qty", value=int(default_led_single), step=1, min_value=0, is_int=True)
 with c3:
-    led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
+    led_desk_qty = num_stepper("כמות לד שולחני", key="led_desk_qty", value=int(default_led_desk), step=1, min_value=0, is_int=True)
 
 st.markdown("---")
 st.subheader("כמות יחידות")
-units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
+units_qty = num_stepper("כמות יחידות", key="units_qty", value=int(default_units), step=1, min_value=0, is_int=True)
 
 
 inputs = Inputs(
