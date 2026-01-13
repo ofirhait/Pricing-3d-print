@@ -276,7 +276,7 @@ def render_pdf(result: dict) -> bytes:
     c.drawRightString(width - x, y, he(f"הנחת כמות: {int((1-result['discount'])*100)}%"))
     y -= 7*mm
     c.setFont("DejaVuSans", 14)
-    c.drawRightString(width - x, y, he(f"סה"כ: {currency(result['total'])}"))
+    c.drawRightString(width - x, y, he(f"סה\"כ: {currency(result['total'])}"))
     y -= 12*mm
 
     df = result["breakdown_df"].copy()
