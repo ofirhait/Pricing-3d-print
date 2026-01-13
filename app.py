@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 
@@ -49,6 +50,47 @@ def ensure_hebrew_font():
         if Path(fp).exists():
             pdfmetrics.registerFont(TTFont("DejaVuSans", fp))
             return
+
+def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str):
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        editable=False, resizable=True, wrapText=True, autoHeight=True,
+        cellStyle={"textAlign": "right"}
+    )
+    for c in editable_cols:
+        gb.configure_column(c, editable=True)
+    gb.configure_grid_options(enableRtl=True, domLayout="autoHeight")
+    gb.configure_side_bar(False)
+    gridOptions = gb.build()
+    resp = AgGrid(
+        df,
+        gridOptions=gridOptions,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_mode=GridUpdateMode.VALUE_CHANGED,
+        fit_columns_on_grid_load=True,
+        allow_unsafe_jscode=False,
+        key=key,
+    )
+    return pd.DataFrame(resp["data"])
+
+def aggrid_view(df: pd.DataFrame, key: str):
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        editable=False, resizable=True, wrapText=True, autoHeight=True,
+        cellStyle={"textAlign": "right"}
+    )
+    gb.configure_grid_options(enableRtl=True, domLayout="autoHeight")
+    gb.configure_side_bar(False)
+    gridOptions = gb.build()
+    AgGrid(
+        df,
+        gridOptions=gridOptions,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_mode=GridUpdateMode.NO_UPDATE,
+        fit_columns_on_grid_load=True,
+        allow_unsafe_jscode=False,
+        key=key,
+    )
 
 # ---------------------------
 # Helpers
@@ -255,11 +297,11 @@ def render_pdf(result: dict) -> bytes:
     # Logo (bigger)
     logo_path = Path(__file__).parent / "logo.jpeg"
     if logo_path.exists():
-        logo_w = 90*mm
-        logo_h = 33*mm
+        logo_w = 130*mm
+        logo_h = 45*mm
         c.drawImage(str(logo_path), width - x - logo_w, y - logo_h + 4*mm,
                     width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
-    y -= 35*mm
+    y -= 52*mm
 
     c.setFont("DejaVuSans", 18)
     c.drawRightString(width - x, y, he("סיכום תמחור"))
@@ -384,37 +426,10 @@ st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.markdown(
     """
     <style>
-    html, body, [class*="css"]  { direction: rtl; }
-    .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
+    html, body, [class*="css"] { direction: rtl; }
     h1, h2, h3, h4, h5, h6, p, label, div, span { text-align: right; }
     input, textarea { text-align: right !important; }
-
-    /* --- AgGrid (data_editor & many dataframes) RTL --- */
-    .ag-root, .ag-header, .ag-body, .ag-center-cols-container, .ag-row, .ag-cell, .ag-header-cell, .ag-header-row {
-        direction: rtl !important;
-    }
-    .ag-header-cell-label, .ag-cell {
-        justify-content: flex-end !important;
-        text-align: right !important;
-    }
-    .ag-cell {
-        white-space: normal !important;
-        line-height: 1.25 !important;
-        overflow: visible !important;
-        padding-right: 10px !important;
-        padding-left: 10px !important;
-    }
-    .ag-header-cell-text {
-        text-align: right !important;
-        white-space: normal !important;
-    }
-
-    /* Make columns resize nicer on mobile */
-    div[data-testid="stDataFrame"] .ag-root-wrapper, div[data-testid="stDataEditor"] .ag-root-wrapper {
-        width: 100% !important;
-    }
-
-    .stDownloadButton button {border-radius: 10px;}
+    .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -448,46 +463,16 @@ project_name = st.text_input("שם פרויקט", value=str(default_project))
 st.subheader("מחירים של פילמנטים")
 materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
 materials_df = pd.DataFrame([{"חומר": k, "מחיר לק\"ג": v} for k, v in materials_per_kg.items()])
-materials_df = st.data_editor(
-    materials_df,
-    hide_index=True,
-    use_container_width=True,
-    num_rows="fixed",
-    column_config={
-        "חומר": st.column_config.TextColumn("חומר", disabled=True),
-        "מחיר לק\"ג": st.column_config.NumberColumn("מחיר לק\"ג", min_value=0.0, step=1.0),
-    },
-)
-materials_per_kg = {row["חומר"]: float(row["מחיר לק\"ג"] or 0.0) for _, row in materials_df.iterrows()}
-
+materials_df = aggrid_editable(materials_df, editable_cols=["מחיר לק\\"ג"], key="prices_materials")
+materials_per_kg = {row["חומר"]: float(row["מחיר לק\\"ג"] or 0.0) for _, row in materials_df.iterrows()}
 st.subheader("מחיר עבודה (מידול/הדפסה/הרכבה)")
 work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
-work_df = st.data_editor(
-    work_df,
-    hide_index=True,
-    use_container_width=True,
-    num_rows="fixed",
-    column_config={
-        "סוג": st.column_config.TextColumn("סוג", disabled=True),
-        "מחיר לשעה": st.column_config.NumberColumn("מחיר לשעה", min_value=0.0, step=1.0),
-    },
-)
+work_df = aggrid_editable(work_df, editable_cols=["מחיר לשעה"], key="prices_work")
 work_per_h = {row["סוג"]: float(row["מחיר לשעה"] or 0.0) for _, row in work_df.iterrows()}
-
 st.subheader("מחיר תוספות (מגנטים/לד בודד/לד שולחני)")
 addons_df = pd.DataFrame([{"תוספת": k, "מחיר ליחידה": float(v)} for k, v in addons_price.items()])
-addons_df = st.data_editor(
-    addons_df,
-    hide_index=True,
-    use_container_width=True,
-    num_rows="fixed",
-    column_config={
-        "תוספת": st.column_config.TextColumn("תוספת", disabled=True),
-        "מחיר ליחידה": st.column_config.NumberColumn("מחיר ליחידה", min_value=0.0, step=1.0),
-    },
-)
+addons_df = aggrid_editable(addons_df, editable_cols=["מחיר ליחידה"], key="prices_addons")
 addons_price = {row["תוספת"]: float(row["מחיר ליחידה"] or 0.0) for _, row in addons_df.iterrows()}
-
 # ---- כמויות ----
 st.subheader("כמויות")
 
@@ -570,7 +555,7 @@ st.caption(
     f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"
 )
 
-st.dataframe(summary_df, use_container_width=True, hide_index=True)
+aggrid_view(summary_df, key="summary")
 st.markdown("---")
 
 # ---- Exports (bottom) ----
