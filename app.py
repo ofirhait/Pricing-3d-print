@@ -294,7 +294,8 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
 
     qty = int(inputs.units_qty or 0)
     disc, disc_pct = discount_factor(qty)
-    total = mround(modeling_cost + unit_price_excl_modeling * qty * disc, 5)
+    total_before_discount = modeling_cost + unit_price_excl_modeling * qty
+    total = mround(total_before_discount * disc, 5)
 
     df = pd.DataFrame(rows)
     return {
@@ -307,6 +308,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
         "qty": qty,
         "discount": disc,
         "discount_pct": disc_pct,
+        "total_before_discount": total_before_discount,
         "total": total,
         "project": inputs.project_name,
     }
@@ -354,6 +356,9 @@ def render_pdf(result: dict) -> bytes:
     y -= 14*mm
 
     c.setFont("DejaVuSans", 12)
+    c.drawRightString(width - x, y, he(f"סה\"כ מידול: {currency(result['modeling_cost'])}"))
+    y -= 7*mm
+
     c.drawRightString(width - x, y, he(f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])}"))
     y -= 7*mm
     c.drawRightString(width - x, y, he(f"כמות: {result['qty']}"))
