@@ -463,8 +463,8 @@ project_name = st.text_input("שם פרויקט", value=str(default_project))
 st.subheader("מחירים של פילמנטים")
 materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
 materials_df = pd.DataFrame([{"חומר": k, "מחיר לק\"ג": v} for k, v in materials_per_kg.items()])
-materials_df = aggrid_editable(materials_df, editable_cols=["מחיר לק\\"ג"], key="prices_materials")
-materials_per_kg = {row["חומר"]: float(row["מחיר לק\\"ג"] or 0.0) for _, row in materials_df.iterrows()}
+materials_df = aggrid_editable(materials_df, editable_cols=['מחיר לק"ג'], key="prices_materials")
+materials_per_kg = {row["חומר"]: float(row['מחיר לק"ג'] or 0.0) for _, row in materials_df.iterrows()}
 st.subheader("מחיר עבודה (מידול/הדפסה/הרכבה)")
 work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
 work_df = aggrid_editable(work_df, editable_cols=["מחיר לשעה"], key="prices_work")
