@@ -12,6 +12,9 @@ from openpyxl.cell.cell import MergedCell
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from bidi.algorithm import get_display
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
@@ -24,6 +27,28 @@ LOGO_B64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QCMRXhpZgAATU0AKgAAAAgABQESAAMAAAABAAEA
 
 def get_logo_bytes() -> bytes:
     return base64.b64decode(LOGO_B64)
+
+
+# Hebrew display helper for PDF (bidi)
+def he(s: str) -> str:
+    try:
+        return get_display(str(s))
+    except Exception:
+        return str(s)
+
+def ensure_hebrew_font():
+    try:
+        pdfmetrics.getFont("DejaVuSans")
+        return
+    except Exception:
+        pass
+    for fp in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+    ]:
+        if Path(fp).exists():
+            pdfmetrics.registerFont(TTFont("DejaVuSans", fp))
+            return
 
 # ---------------------------
 # Helpers
@@ -125,9 +150,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
         cost = unit * grams
         rows.append({
             "קטגוריה": "פילמנטים",
-            "פריט": f"חומר {i}",
-            "תיאור": mat,
-            "כמות": grams,
+            "פריט": mat,            "כמות": grams,
             "יחידה": "גרם",
             "מחיר ליחידה": unit,
             "עלות": cost
@@ -143,9 +166,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
         unit = float(work_per_h.get(name_he, 0.0))  # ₪ per hour
         return {
             "קטגוריה": "עבודה",
-            "פריט": name_he,
-            "תיאור": "",
-            "כמות": hours,
+            "פריט": name_he,            "כמות": hours,
             "יחידה": "שעה",
             "מחיר ליחידה": unit,
             "עלות": unit * hours
@@ -170,9 +191,7 @@ def compute(inputs: Inputs, materials_per_kg: dict, work_per_h: dict, addons_pri
         unit = float(addons_price.get(name, 0.0))
         return {
             "קטגוריה": "תוספות",
-            "פריט": name,
-            "תיאור": "",
-            "כמות": qty,
+            "פריט": name,            "כמות": qty,
             "יחידה": "יח׳",
             "מחיר ליחידה": unit,
             "עלות": unit * qty
@@ -224,77 +243,80 @@ def _register_hebrew_font():
 
 def render_pdf(result: dict) -> bytes:
     buf = BytesIO()
+    ensure_hebrew_font()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
-    font_name = _register_hebrew_font()
 
-    x_margin = 18*mm
+    x = 18*mm
     y = height - 18*mm
 
-    # Logo
-    try:
-        logo = ImageReader(BytesIO(get_logo_bytes()))
-        c.drawImage(logo, x_margin, y-20*mm, width=38*mm, height=20*mm, preserveAspectRatio=True, mask='auto')
-    except Exception:
-        pass
+    # Logo (bigger)
+    logo_path = Path(__file__).parent / "logo.jpeg"
+    if logo_path.exists():
+        logo_w = 65*mm
+        logo_h = 24*mm
+        c.drawImage(str(logo_path), width - x - logo_w, y - logo_h + 4*mm,
+                    width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
+    y -= 26*mm
 
-    # Header (right aligned)
-    c.setFont(font_name, 18)
-    c.drawRightString(width - x_margin, y, "סיכום תמחור")
+    c.setFont("DejaVuSans", 18)
+    c.drawRightString(width - x, y, he("סיכום תמחור"))
     y -= 10*mm
-    c.setFont(font_name, 12)
-    c.drawRightString(width - x_margin, y, f"פרויקט: {result['project']}")
-    y -= 7*mm
-    c.drawRightString(width - x_margin, y, f"תאריך: {pd.Timestamp.now().strftime('%d/%m/%Y')}")
-    y -= 12*mm
-
-    c.setFont(font_name, 12)
-    c.drawRightString(width - x_margin, y, f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])}")
-    y -= 7*mm
-    c.drawRightString(width - x_margin, y, f"כמות: {result['qty']}")
-    y -= 7*mm
-    c.drawRightString(width - x_margin, y, f"הנחת כמות: {int((1-result['discount'])*100)}%")
-    y -= 7*mm
-    c.setFont(font_name, 14)
-    c.drawRightString(width - x_margin, y, f"סה״כ: {currency(result['total'])}")
-    y -= 12*mm
-
-    # Table
-    c.setFont(font_name, 12)
-    c.drawRightString(width - x_margin, y, "פירוט עלויות וכמויות")
+    c.setFont("DejaVuSans", 12)
+    c.drawRightString(width - x, y, he(f"פרויקט: {result['project']}"))
     y -= 8*mm
+    c.drawRightString(width - x, y, he(f"תאריך: {pd.Timestamp.now().strftime('%d/%m/%Y')}"))
+    y -= 14*mm
 
-    c.setFont(font_name, 10)
-    headers = ["קטגוריה", "פריט", "כמות", "מחיר ליחידה", "עלות"]
-    col_x = [width - x_margin, width - 55*mm, width - 95*mm, width - 125*mm, x_margin]  # right->left layout
-
-    # Header row
-    c.drawRightString(col_x[0], y, headers[0])
-    c.drawRightString(col_x[1], y, headers[1])
-    c.drawRightString(col_x[2], y, headers[2])
-    c.drawRightString(col_x[3], y, headers[3])
-    c.drawString(col_x[4], y, headers[4])  # left aligned for numbers
-    y -= 6*mm
+    c.setFont("DejaVuSans", 12)
+    c.drawRightString(width - x, y, he(f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])}"))
+    y -= 7*mm
+    c.drawRightString(width - x, y, he(f"כמות: {result['qty']}"))
+    y -= 7*mm
+    c.drawRightString(width - x, y, he(f"הנחת כמות: {int((1-result['discount'])*100)}%"))
+    y -= 7*mm
+    c.setFont("DejaVuSans", 14)
+    c.drawRightString(width - x, y, he(f"סה"כ: {currency(result['total'])}"))
+    y -= 12*mm
 
     df = result["breakdown_df"].copy()
+    df = df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
+
+    c.setFont("DejaVuSans", 11)
+    c.drawRightString(width - x, y, he("פירוט עלויות"))
+    y -= 8*mm
+
+    c.setFont("DejaVuSans", 9)
+    col_right = {
+        "קטגוריה": width - x,
+        "פריט": width - x - 32*mm,
+        "כמות": width - x - 86*mm,
+        "מחיר ליחידה": width - x - 112*mm,
+        "עלות": width - x - 140*mm,
+    }
+
+    # Header
+    c.drawRightString(col_right["קטגוריה"], y, he("קטגוריה"))
+    c.drawRightString(col_right["פריט"], y, he("פריט"))
+    c.drawRightString(col_right["כמות"], y, he("כמות"))
+    c.drawRightString(col_right["מחיר ליחידה"], y, he("מחיר ליחידה"))
+    c.drawRightString(col_right["עלות"], y, he("עלות"))
+    y -= 6*mm
+
     for _, r in df.iterrows():
         if y < 18*mm:
             c.showPage()
-            y = height - 18*mm
-            c.setFont(font_name, 10)
+            ensure_hebrew_font()
+            c.setFont("DejaVuSans", 9)
+            y = height - 20*mm
 
-        cat = str(r["קטגוריה"])
-        item = str(r["פריט"])
-        qty = float(r["כמות"])
-        unit_price = float(r["מחיר ליחידה"])
-        cost = float(r["עלות"])
-
-        c.drawRightString(col_x[0], y, cat[:18])
-        c.drawRightString(col_x[1], y, item[:22])
-        c.drawRightString(col_x[2], y, f"{qty:.2f}")
-        c.drawRightString(col_x[3], y, currency2(unit_price))
-        c.drawString(col_x[4], y, currency2(cost))
-        y -= 5.5*mm
+        c.drawRightString(col_right["קטגוריה"], y, he(str(r["קטגוריה"])))
+        c.drawRightString(col_right["פריט"], y, he(str(r["פריט"])))
+        qty_txt = f'{float(r["כמות"]):.2f}'.rstrip("0").rstrip(".")
+        c.drawRightString(col_right["כמות"], y, he(f'{qty_txt} {r["יחידה"]}'))
+        c.drawRightString(col_right["מחיר ליחידה"], y, he(currency2(float(r["מחיר ליחידה"]))))
+        c.drawRightString(col_right["עלות"], y, he(currency2(float(r["עלות"]))))
+        y -= 5.2*mm
 
     c.showPage()
     c.save()
@@ -374,110 +396,121 @@ st.markdown(
 st.image(get_logo_bytes(), use_container_width=True)
 st.markdown(f"### {APP_TITLE}")
 
-uploaded = st.file_uploader("העלה קובץ אקסל (xlsx)", type=["xlsx"])
-if not uploaded:
-    st.info("העלה את הקובץ כדי להתחיל.")
-    st.stop()
+# ברירת מחדל: משתמשים בתבנית הקבועה שמגיעה עם האפליקציה
+template_file = Path(__file__).parent / "template.xlsx"
 
-wb = load_template_xlsx(uploaded)
-materials_default, work_default, addons_default = read_rates_from_sheet(wb)
+with st.expander("החלפת תבנית אקסל (אופציונלי)"):
+    uploaded = st.file_uploader("אם תרצה להחליף תבנית – העלה קובץ אקסל (xlsx)", type=["xlsx"])
+
+if uploaded is not None:
+    wb = load_template_xlsx(uploaded)
+else:
+    wb = openpyxl.load_workbook(template_file, data_only=False)
+
+
+materials_per_kg, work_per_h, addons_price = read_rates_from_sheet(wb)
 ws = wb.active
 
-# ---- Title & Project name ----
+# ---- כותרת ושם פרויקט ----
+st.subheader("כותרת ושם פרויקט")
 default_project = ws["H5"].value or "פרויקט"
 project_name = st.text_input("שם פרויקט", value=str(default_project))
 
-st.markdown("---")
+# ---- מחירים ----
+st.subheader("מחירים של פילמנטים")
+materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
+materials_df = pd.DataFrame([{"חומר": k, "מחיר לק"ג": v} for k, v in materials_per_kg.items()])
+materials_df = st.data_editor(
+    materials_df,
+    hide_index=True,
+    use_container_width=True,
+    num_rows="fixed",
+    column_config={
+        "חומר": st.column_config.TextColumn("חומר", disabled=True),
+        "מחיר לק"ג": st.column_config.NumberColumn("מחיר לק"ג", min_value=0.0, step=1.0),
+    },
+)
+materials_per_kg = {row["חומר"]: float(row["מחיר לק"ג"] or 0.0) for _, row in materials_df.iterrows()}
 
-# ---- Prices (editable) ----
-st.subheader("מחירים")
+st.subheader("מחיר עבודה (מידול/הדפסה/הרכבה)")
+work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
+work_df = st.data_editor(
+    work_df,
+    hide_index=True,
+    use_container_width=True,
+    num_rows="fixed",
+    column_config={
+        "סוג": st.column_config.TextColumn("סוג", disabled=True),
+        "מחיר לשעה": st.column_config.NumberColumn("מחיר לשעה", min_value=0.0, step=1.0),
+    },
+)
+work_per_h = {row["סוג"]: float(row["מחיר לשעה"] or 0.0) for _, row in work_df.iterrows()}
 
-st.markdown("**מחירי פילמנטים (₪ לק״ג)**")
-materials_per_kg = {}
-for name, val in materials_default.items():
-    materials_per_kg[name] = st.number_input(
-        f"{name}",
-        min_value=0.0,
-        step=1.0,
-        value=float(val),
-        key=f"price_mat_{name}"
-    )
+st.subheader("מחיר תוספות (מגנטים/לד בודד/לד שולחני)")
+addons_df = pd.DataFrame([{"תוספת": k, "מחיר ליחידה": float(v)} for k, v in addons_price.items()])
+addons_df = st.data_editor(
+    addons_df,
+    hide_index=True,
+    use_container_width=True,
+    num_rows="fixed",
+    column_config={
+        "תוספת": st.column_config.TextColumn("תוספת", disabled=True),
+        "מחיר ליחידה": st.column_config.NumberColumn("מחיר ליחידה", min_value=0.0, step=1.0),
+    },
+)
+addons_price = {row["תוספת"]: float(row["מחיר ליחידה"] or 0.0) for _, row in addons_df.iterrows()}
 
-st.markdown("**מחיר עבודה (₪ לשעה)**")
-work_per_h = {}
-for name, val in work_default.items():
-    work_per_h[name] = st.number_input(
-        f"{name}",
-        min_value=0.0,
-        step=1.0,
-        value=float(val),
-        key=f"price_work_{name}"
-    )
-
-st.markdown("**מחיר תוספות (₪ ליחידה)**")
-addons_price = {}
-for name, val in addons_default.items():
-    addons_price[name] = st.number_input(
-        f"{name}",
-        min_value=0.0,
-        step=1.0,
-        value=float(val),
-        key=f"price_add_{name}"
-    )
-
-st.markdown("---")
-
-# ---- Quantities ----
+# ---- כמויות ----
 st.subheader("כמויות")
 
-material_names = list(materials_per_kg.keys()) or ["חומר"]
-
-# Defaults for quantity lines from template (best-effort)
+# Defaults from template (best-effort)
 default_lines = []
 for r in range(7, 10):
     default_lines.append({
-        "חומר": (ws.cell(r, 8).value or material_names[0]),
+        "חומר": (ws.cell(r, 8).value or list(materials_per_kg.keys())[0]),
         "גרמים": float(ws.cell(r, 9).value or 0),
     })
 
-mat_lines = []
-for i in range(3):
-    mat = st.selectbox(
-        f"חומר {i+1}",
-        material_names,
-        index=material_names.index(default_lines[i]["חומר"]) if default_lines[i]["חומר"] in material_names else 0,
-        key=f"mat_{i}"
-    )
-    grams = st.number_input(
-        f"גרמים {i+1}",
-        min_value=0.0,
-        step=1.0,
-        value=float(default_lines[i]["גרמים"]),
-        key=f"grams_{i}"
-    )
-    mat_lines.append({"חומר": mat, "גרמים": grams})
-
-st.markdown("**זמנים**")
-default_model_time = ws["I11"].value or time(1, 0)
-default_print_time = ws["I12"].value or time(2, 40)
-default_assy_time = ws["I13"].value or time(0, 30)
-
-modeling_time = st.time_input("זמן מידול", value=default_model_time)
-printing_time = st.time_input("זמן הדפסה", value=default_print_time)
-assembly_time = st.time_input("זמן הרכבה", value=default_assy_time)
-
-st.markdown("**תוספות**")
+default_model_time = ws["I11"].value or time(1,0)
+default_print_time = ws["I12"].value or time(2,40)
+default_assy_time = ws["I13"].value or time(0,30)
 default_magnets = int(ws["I14"].value or 0)
 default_led_single = int(ws["I15"].value or 0)
 default_led_desk = int(ws["I16"].value or 0)
-
-magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=int(default_magnets))
-led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=int(default_led_single))
-led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
-
 default_units = int(ws["J21"].value or 1)
-units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
 
+st.markdown("**חומרים**")
+material_names = list(materials_per_kg.keys())
+mat_lines = []
+for i in range(3):
+    c1, c2 = st.columns([1,1])
+    with c1:
+        mat = st.selectbox(f"חומר {i+1}", material_names,
+                           index=material_names.index(default_lines[i]["חומר"]) if default_lines[i]["חומר"] in material_names else 0,
+                           key=f"mat{i}")
+    with c2:
+        grams = st.number_input(f"גרמים {i+1}", min_value=0.0, step=1.0, value=float(default_lines[i]["גרמים"]), key=f"grams{i}")
+    mat_lines.append({"חומר": mat, "גרמים": grams})
+
+st.markdown("**עבודה**")
+c1, c2, c3 = st.columns(3)
+with c1:
+    modeling_time = st.time_input("זמן מידול", value=default_model_time)
+with c2:
+    printing_time = st.time_input("זמן הדפסה", value=default_print_time)
+with c3:
+    assembly_time = st.time_input("זמן הרכבה", value=default_assy_time)
+
+st.markdown("**תוספות**")
+c1, c2, c3 = st.columns(3)
+with c1:
+    magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=int(default_magnets))
+with c2:
+    led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=int(default_led_single))
+with c3:
+    led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
+
+units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
 inputs = Inputs(
     project_name=project_name,
     material_lines=mat_lines,
@@ -495,20 +528,21 @@ result = compute(inputs, materials_per_kg, work_per_h, addons_price)
 st.markdown("---")
 
 # ---- Summary ----
-st.subheader("סיכום")
+st.subheader("טבלת סיכום עלויות וכמויות עם סה"כ")
+
+# טבלת סיכום (מצומצמת וברורה)
+summary_df = result["breakdown_df"].copy()
+summary_df = summary_df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
+summary_df["מחיר ליחידה"] = summary_df["מחיר ליחידה"].map(currency2)
+summary_df["עלות"] = summary_df["עלות"].map(currency2)
 
 st.metric("סה״כ", currency(result["total"]))
 st.caption(
     f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])} | "
-    f"הנחת כמות: {int((1-result['discount'])*100)}% | "
-    f"כמות: {result['qty']}"
+    f"הנחת כמות: {int((1-result['discount'])*100)}%"
 )
 
-df_show = result["breakdown_df"].copy()
-df_show["מחיר ליחידה"] = df_show["מחיר ליחידה"].map(currency2)
-df_show["עלות"] = df_show["עלות"].map(currency2)
-st.dataframe(df_show, use_container_width=True, hide_index=True)
-
+st.dataframe(summary_df, use_container_width=True, hide_index=True)
 st.markdown("---")
 
 # ---- Exports (bottom) ----
