@@ -51,7 +51,7 @@ def ensure_hebrew_font():
             pdfmetrics.registerFont(TTFont("DejaVuSans", fp))
             return
 
-def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str):
+def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str, height: int = None):
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(
         editable=False, resizable=True, wrapText=True, autoHeight=True,
@@ -59,7 +59,7 @@ def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str):
     )
     for c in editable_cols:
         gb.configure_column(c, editable=True)
-    gb.configure_grid_options(enableRtl=True, domLayout="autoHeight")
+    gb.configure_grid_options(enableRtl=True, domLayout="normal", rowHeight=42, headerHeight=42)
     gb.configure_side_bar(False)
     gridOptions = gb.build()
     resp = AgGrid(
@@ -70,16 +70,17 @@ def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str):
         fit_columns_on_grid_load=True,
         allow_unsafe_jscode=False,
         key=key,
+        height=height,
     )
     return pd.DataFrame(resp["data"])
 
-def aggrid_view(df: pd.DataFrame, key: str):
+def aggrid_view(df: pd.DataFrame, key: str, height: int = None):
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(
         editable=False, resizable=True, wrapText=True, autoHeight=True,
         cellStyle={"textAlign": "right"}
     )
-    gb.configure_grid_options(enableRtl=True, domLayout="autoHeight")
+    gb.configure_grid_options(enableRtl=True, domLayout="normal", rowHeight=42, headerHeight=42)
     gb.configure_side_bar(False)
     gridOptions = gb.build()
     AgGrid(
@@ -90,6 +91,7 @@ def aggrid_view(df: pd.DataFrame, key: str):
         fit_columns_on_grid_load=True,
         allow_unsafe_jscode=False,
         key=key,
+        height=height,
     )
 
 # ---------------------------
@@ -294,14 +296,14 @@ def render_pdf(result: dict) -> bytes:
     x = 18*mm
     y = height - 18*mm
 
-    # Logo (bigger)
+    # Logo (top-left, huge)
     logo_path = Path(__file__).parent / "logo.jpeg"
     if logo_path.exists():
-        logo_w = 130*mm
-        logo_h = 45*mm
-        c.drawImage(str(logo_path), width - x - logo_w, y - logo_h + 4*mm,
+        logo_w = 155*mm
+        logo_h = 55*mm
+        c.drawImage(str(logo_path), x, y - logo_h + 2*mm,
                     width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
-    y -= 52*mm
+    y -= 60*mm
 
     c.setFont("DejaVuSans", 18)
     c.drawRightString(width - x, y, he("סיכום תמחור"))
@@ -435,6 +437,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+
+st.markdown(
+    """
+    <style>
+    h3 { margin-bottom: 0.4rem !important; margin-top: 0.9rem !important; }
+    .ag-theme-streamlit { margin-bottom: 0.6rem !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Header
 st.image(get_logo_bytes(), use_container_width=True)
 st.markdown(f"### {APP_TITLE}")
@@ -460,18 +474,18 @@ default_project = ws["H5"].value or "פרויקט"
 project_name = st.text_input("שם פרויקט", value=str(default_project))
 
 # ---- מחירים ----
-st.subheader("מחירים של פילמנטים")
+st.markdown("### מחירים של פילמנטים")
 materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
 materials_df = pd.DataFrame([{"חומר": k, "מחיר לק\"ג": v} for k, v in materials_per_kg.items()])
-materials_df = aggrid_editable(materials_df, editable_cols=['מחיר לק"ג'], key="prices_materials")
+materials_df = aggrid_editable(materials_df, editable_cols=['מחיר לק"ג'], key="prices_materials", height=230)
 materials_per_kg = {row["חומר"]: float(row['מחיר לק"ג'] or 0.0) for _, row in materials_df.iterrows()}
-st.subheader("מחיר עבודה (מידול/הדפסה/הרכבה)")
+st.markdown("### מחיר עבודה (מידול/הדפסה/הרכבה)")
 work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
-work_df = aggrid_editable(work_df, editable_cols=["מחיר לשעה"], key="prices_work")
+work_df = aggrid_editable(work_df, editable_cols=["מחיר לשעה"], key="prices_work", height=210)
 work_per_h = {row["סוג"]: float(row["מחיר לשעה"] or 0.0) for _, row in work_df.iterrows()}
-st.subheader("מחיר תוספות (מגנטים/לד בודד/לד שולחני)")
+st.markdown("### מחיר תוספות (מגנטים/לד בודד/לד שולחני)")
 addons_df = pd.DataFrame([{"תוספת": k, "מחיר ליחידה": float(v)} for k, v in addons_price.items()])
-addons_df = aggrid_editable(addons_df, editable_cols=["מחיר ליחידה"], key="prices_addons")
+addons_df = aggrid_editable(addons_df, editable_cols=["מחיר ליחידה"], key="prices_addons", height=210)
 addons_price = {row["תוספת"]: float(row["מחיר ליחידה"] or 0.0) for _, row in addons_df.iterrows()}
 # ---- כמויות ----
 st.subheader("כמויות")
@@ -555,7 +569,7 @@ st.caption(
     f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"
 )
 
-aggrid_view(summary_df, key="summary")
+aggrid_view(summary_df, key="summary", height=420)
 st.markdown("---")
 
 # ---- Exports (bottom) ----
