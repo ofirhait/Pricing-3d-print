@@ -831,7 +831,70 @@ xlsx_bytes = write_multi_to_xlsx(project_results)
 # אנחנו מורידים כ-attachment (octet-stream) ומוסיפים אופציית צפייה בתוך האפליקציה.
 c1, c2 = st.columns(2)
 with c1:
-    st.download_button("הורד PDF", data=pdf_bytes, file_name="הצעת_מחיר_תלת_מימד.pdf", mime="application/octet-stream")
+    # באייפון כששומרים למסך הבית, "download" על PDF פותח מסך צפייה בלי Back.
+    # לכן אנחנו משתמשים ב‑Web Share API (Share/Save) שמחזיר אותך ישר לאפליקציה אחרי השיתוף.
+    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+    share_html = f"""
+    <div style="direction:rtl; text-align:right;">
+      <button id="sharePdfBtn"
+        style="
+          width:100%;
+          padding:0.6rem 0.9rem;
+          border-radius:0.5rem;
+          border:1px solid rgba(49,51,63,0.2);
+          background:white;
+          font-size:1rem;
+          font-weight:600;
+          cursor:pointer;
+        ">
+        שמירה/שיתוף PDF
+      </button>
+      <div id="shareHint" style="margin-top:0.35rem; font-size:0.85rem; color:rgba(49,51,63,0.7);">
+        נפתח מסך שיתוף (כמו “שמור בקבצים”) בלי לצאת מהאפליקציה.
+      </div>
+    </div>
+    <script>
+    const b64 = "{b64_pdf}";
+    function b64ToBlob(b64Data, contentType) {{
+      const byteCharacters = atob(b64Data);
+      const byteArrays = [];
+      for (let offset = 0; offset < byteCharacters.length; offset += 1024) {{
+        const slice = byteCharacters.slice(offset, offset + 1024);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {{
+          byteNumbers[i] = slice.charCodeAt(i);
+        }}
+        byteArrays.push(new Uint8Array(byteNumbers));
+      }}
+      return new Blob(byteArrays, {{type: contentType}});
+    }}
+
+    document.getElementById("sharePdfBtn").addEventListener("click", async () => {{
+      try {{
+        const blob = b64ToBlob(b64, "application/pdf");
+        const file = new File([blob], "הצעת_מחיר_תלת_מימד.pdf", {{type: "application/pdf"}});
+        if (navigator.canShare && navigator.canShare({{ files: [file] }}) && navigator.share) {{
+          await navigator.share({{ files: [file], title: "הצעת מחיר - הדפסת תלת מימד" }});
+        }} else {{
+          // Fallback: download attribute (may open viewer on iOS)
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "הצעת_מחיר_תלת_מימד.pdf";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }}
+      }} catch (e) {{
+        console.log(e);
+        const el = document.getElementById("shareHint");
+        if (el) el.textContent = "לא הצלחתי לפתוח שיתוף בדפדפן הזה. נסה לפתוח ב‑Safari.";
+      }}
+    }});
+    </script>
+    """
+    components.html(share_html, height=120)
 with c2:
     st.download_button("הורד אקסל", data=xlsx_bytes, file_name="הצעת_מחיר_תלת_מימד.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
