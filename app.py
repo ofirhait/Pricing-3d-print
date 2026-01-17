@@ -785,7 +785,7 @@ for p in st.session_state.projects:
 
         inputs = Inputs(
             project_name=p["name"],
-            materials=mat_lines,
+            material_lines=mat_lines,
             modeling_time=modeling_time,
             printing_time=printing_time,
             assembly_time=assembly_time,
