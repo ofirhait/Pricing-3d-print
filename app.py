@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from PIL import Image
 import streamlit as st
+import streamlit.components.v1 as components
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 import openpyxl
 from openpyxl.cell.cell import MergedCell
@@ -413,6 +414,124 @@ def render_pdf(result: dict) -> bytes:
     c.save()
     return buf.getvalue()
 
+
+
+def render_pdf_multi(results: list) -> bytes:
+    buf = BytesIO()
+    ensure_hebrew_font()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    x = 18*mm
+
+    def header(title: str):
+        y = height - 18*mm
+        # Logo (top-left, huge - trimmed)
+        logo_path = Path(__file__).parent / "logo.jpeg"
+        if logo_path.exists():
+            logo_img = load_trimmed_logo(logo_path)
+            logo_w = 150*mm
+            logo_h = 60*mm
+            c.drawImage(logo_img, x, y - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
+        y -= 65*mm
+        c.setFont("DejaVuSans", 18)
+        c.drawRightString(width - x, y, he(title))
+        y -= 10*mm
+        c.setFont("DejaVuSans", 12)
+        c.drawRightString(width - x, y, he(f"תאריך: {pd.Timestamp.now().strftime('%d/%m/%Y')}"))
+        y -= 12*mm
+        return y
+
+    def draw_table(df, y):
+        c.setFont("DejaVuSans", 9)
+        col_right = {
+            "קטגוריה": width - x,
+            "פריט": width - x - 32*mm,
+            "כמות": width - x - 86*mm,
+            "מחיר ליחידה": width - x - 112*mm,
+            "עלות": width - x - 140*mm,
+        }
+        # header row
+        c.drawRightString(col_right["קטגוריה"], y, he("קטגוריה"))
+        c.drawRightString(col_right["פריט"], y, he("פריט"))
+        c.drawRightString(col_right["כמות"], y, he("כמות"))
+        c.drawRightString(col_right["מחיר ליחידה"], y, he("מחיר ליחידה"))
+        c.drawRightString(col_right["עלות"], y, he("עלות"))
+        y -= 6*mm
+        for _, r in df.iterrows():
+            if y < 18*mm:
+                c.showPage()
+                ensure_hebrew_font()
+                y = header("הצעת מחיר - הדפסת תלת מימד")
+                c.setFont("DejaVuSans", 9)
+            c.drawRightString(col_right["קטגוריה"], y, he(str(r["קטגוריה"])))
+            c.drawRightString(col_right["פריט"], y, he(str(r["פריט"])))
+            qty_txt = f'{float(r["כמות"]):.2f}'.rstrip("0").rstrip(".")
+            c.drawRightString(col_right["כמות"], y, he(f'{qty_txt} {r["יחידה"]}'))
+            c.drawRightString(col_right["מחיר ליחידה"], y, he(currency2(float(r["מחיר ליחידה"]))))
+            c.drawRightString(col_right["עלות"], y, he(currency2(float(r["עלות"]))))
+            y -= 5.2*mm
+        return y
+
+    if not results:
+        y = header("הצעת מחיר - הדפסת תלת מימד")
+        c.setFont("DejaVuSans", 12)
+        c.drawRightString(width - x, y, he("אין פרויקטים לחישוב."))
+        c.save()
+        return buf.getvalue()
+
+    # Combined page
+    y = header("הצעת מחיר - הדפסת תלת מימד")
+    total_all = sum(r["total"] for r in results)
+    c.setFont("DejaVuSans", 14)
+    c.drawRightString(width - x, y, he(f"סה\"כ לכל הפרויקטים: {currency(total_all)}"))
+    y -= 10*mm
+
+    combined = pd.concat([r["breakdown_df"].assign(פרויקט=r["project"]) for r in results], ignore_index=True)
+    combined = combined[combined["כמות"].astype(float) != 0].copy()
+    combined = combined.groupby(["קטגוריה","פריט","יחידה","מחיר ליחידה"], as_index=False).agg({"כמות":"sum","עלות":"sum"})
+    combined["כמות"] = combined["כמות"].astype(float).round(2)
+
+    c.setFont("DejaVuSans", 11)
+    c.drawRightString(width - x, y, he("פירוט מאוחד"))
+    y -= 8*mm
+    draw_table(combined, y)
+
+    c.showPage()
+
+    # Per-project pages
+    for r in results:
+        y = header("הצעת מחיר - הדפסת תלת מימד")
+        c.setFont("DejaVuSans", 13)
+        c.drawRightString(width - x, y, he(f"פרויקט: {r['project']}"))
+        y -= 10*mm
+        c.setFont("DejaVuSans", 12)
+        c.drawRightString(width - x, y, he(f"סה\"כ מידול: {currency(r['modeling_cost'])}"))
+        y -= 7*mm
+        c.drawRightString(width - x, y, he(f"מחיר יחידה (ללא מידול): {currency(r['unit_price'])}"))
+        y -= 7*mm
+        c.drawRightString(width - x, y, he(f"כמות: {r['qty']}"))
+        y -= 7*mm
+        c.drawRightString(width - x, y, he(f"הנחת כמות: {int(r.get('discount_pct', 0))}%"))
+        y -= 7*mm
+        c.setFont("DejaVuSans", 14)
+        c.drawRightString(width - x, y, he(f"סה\"כ: {currency(r['total'])}"))
+        y -= 12*mm
+
+        df = r["breakdown_df"].copy()
+        df = df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
+        df = df[df["כמות"].astype(float) != 0].reset_index(drop=True)
+
+        c.setFont("DejaVuSans", 11)
+        c.drawRightString(width - x, y, he("פירוט עלויות"))
+        y -= 8*mm
+        draw_table(df, y)
+
+        c.showPage()
+
+    c.save()
+    return buf.getvalue()
+
+
 def write_back_to_xlsx(template_wb: openpyxl.Workbook, inputs: Inputs, result: dict,
                        materials_per_kg: dict, work_per_h: dict, addons_price: dict) -> bytes:
     ws = template_wb.active
@@ -464,6 +583,35 @@ def write_back_to_xlsx(template_wb: openpyxl.Workbook, inputs: Inputs, result: d
     out = BytesIO()
     template_wb.save(out)
     return out.getvalue()
+
+
+
+def write_multi_to_xlsx(results: list) -> bytes:
+    out = BytesIO()
+    wb2 = openpyxl.Workbook()
+    ws1 = wb2.active
+    ws1.title = "סיכום"
+    ws2 = wb2.create_sheet("מאוחד")
+
+    ws1.append(["פרויקט","קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"])
+    rows = []
+    for r in results:
+        df = r["breakdown_df"].copy()
+        df = df[df["כמות"].astype(float) != 0].copy()
+        for _, row in df.iterrows():
+            ws1.append([r["project"], row["קטגוריה"], row["פריט"], float(row["כמות"]), row["יחידה"], float(row["מחיר ליחידה"]), float(row["עלות"])])
+            rows.append([row["קטגוריה"], row["פריט"], row["יחידה"], float(row["מחיר ליחידה"]), float(row["כמות"]), float(row["עלות"])])
+
+    if rows:
+        dfc = pd.DataFrame(rows, columns=["קטגוריה","פריט","יחידה","מחיר ליחידה","כמות","עלות"])
+        dfc = dfc.groupby(["קטגוריה","פריט","יחידה","מחיר ליחידה"], as_index=False).agg({"כמות":"sum","עלות":"sum"})
+        ws2.append(["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"])
+        for _, row in dfc.iterrows():
+            ws2.append([row["קטגוריה"], row["פריט"], float(row["כמות"]), row["יחידה"], float(row["מחיר ליחידה"]), float(row["עלות"])])
+
+    wb2.save(out)
+    return out.getvalue()
+
 
 
 
@@ -554,98 +702,139 @@ addons_df = pd.DataFrame([{"תוספת": k, "מחיר ליחידה": float(v)} f
 addons_df = aggrid_editable(addons_df, editable_cols=[COL_PRICE_UNIT], key="prices_addons", height=185)
 addons_price = {row[COL_ADDON]: float(row[COL_PRICE_UNIT] or 0.0) for _, row in addons_df.iterrows()}
 # ---- כמויות ----
-st.subheader("כמויות")
 
-# Defaults from template (best-effort)
-default_lines = [{"חומר": list(materials_per_kg.keys())[0], "גרמים": 0.0} for _ in range(3)]
+st.subheader("פרויקטים")
 
-default_model_time = time(0,0)
-default_print_time = time(0,0)
-default_assy_time = time(0,0)
-default_magnets = 0
-default_led_single = 0
-default_led_desk = 0
-default_units = 0
+# ---- Projects manager ----
+if "projects" not in st.session_state:
+    st.session_state.projects = [{"id": 1, "name": "פרויקט 1"}]
+if "next_project_id" not in st.session_state:
+    st.session_state.next_project_id = 2
 
-st.markdown("**חומרים**")
+c_add, c_clear = st.columns(2)
+with c_add:
+    if st.button("הוסף פרויקט"):
+        st.session_state.projects.append({"id": st.session_state.next_project_id, "name": f"פרויקט {st.session_state.next_project_id}"})
+        st.session_state.next_project_id += 1
+with c_clear:
+    if st.button("איפוס כמויות לכל הפרויקטים"):
+        # reset only quantities (not pricing)
+        for p in st.session_state.projects:
+            pid = p["id"]
+            for i in range(3):
+                st.session_state.pop(f"p{pid}_grams{i}", None)
+                st.session_state.pop(f"p{pid}_mat{i}", None)
+            for k in ["modeling_time","printing_time","assembly_time","magnets_qty","led_single_qty","led_desk_qty","units_qty"]:
+                st.session_state.pop(f"p{pid}_{k}", None)
+
+st.markdown("---")
+
+# ---- Per-project inputs ----
+project_results = []
+all_breakdowns = []
+
 material_names = list(materials_per_kg.keys())
-mat_lines = []
-for i in range(3):
-    c1, c2 = st.columns([1,1])
-    with c1:
-        mat = st.selectbox(f"חומר {i+1}", material_names,
-                           index=material_names.index(default_lines[i]["חומר"]) if default_lines[i]["חומר"] in material_names else 0,
-                           key=f"mat{i}")
-    with c2:
-        grams = st.number_input(f"גרמים {i+1}", min_value=0.0, step=1.0, value=float(default_lines[i]["גרמים"]), key=f"grams{i}")
-    mat_lines.append({"חומר": mat, "גרמים": grams})
 
-st.markdown("**עבודה**")
-c1, c2, c3 = st.columns(3)
-with c1:
-    modeling_time = st.time_input("זמן מידול", value=default_model_time)
-with c2:
-    printing_time = st.time_input("זמן הדפסה", value=default_print_time)
-with c3:
-    assembly_time = st.time_input("זמן הרכבה", value=default_assy_time)
+for p in st.session_state.projects:
+    pid = p["id"]
+    with st.expander(f"פרויקט: {p.get('name','')}", expanded=True):
+        p["name"] = st.text_input("שם פרויקט", value=p.get("name", f"פרויקט {pid}"), key=f"p{pid}_name")
 
-st.markdown("**תוספות**")
-c1, c2, c3 = st.columns(3)
-with c1:
-    magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=int(default_magnets))
-with c2:
-    led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=int(default_led_single))
-with c3:
-    led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=int(default_led_desk))
+        st.markdown("**חומרים**")
+        mat_lines = []
+        for i in range(3):
+            c1, c2 = st.columns([1,1])
+            with c1:
+                mat = st.selectbox(
+                    f"חומר {i+1}",
+                    material_names,
+                    index=0,
+                    key=f"p{pid}_mat{i}",
+                )
+            with c2:
+                grams = st.number_input(
+                    f"גרמים {i+1}",
+                    min_value=0.0,
+                    step=1.0,
+                    value=0.0,
+                    key=f"p{pid}_grams{i}",
+                )
+            mat_lines.append({"חומר": mat, "גרמים": float(grams)})
 
-st.markdown("---")
-st.subheader("כמות יחידות")
-units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=int(default_units))
+        st.markdown("**עבודה**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            modeling_time = st.time_input("זמן מידול", value=time(0,0), key=f"p{pid}_modeling_time")
+        with c2:
+            printing_time = st.time_input("זמן הדפסה", value=time(0,0), key=f"p{pid}_printing_time")
+        with c3:
+            assembly_time = st.time_input("זמן הרכבה", value=time(0,0), key=f"p{pid}_assembly_time")
 
+        st.markdown("**תוספות**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            magnets_qty = st.number_input("כמות מגנטים", min_value=0, step=1, value=0, key=f"p{pid}_magnets_qty")
+        with c2:
+            led_single_qty = st.number_input("כמות לד בודד", min_value=0, step=1, value=0, key=f"p{pid}_led_single_qty")
+        with c3:
+            led_desk_qty = st.number_input("כמות לד שולחני", min_value=0, step=1, value=0, key=f"p{pid}_led_desk_qty")
 
-inputs = Inputs(
-    project_name=project_name,
-    material_lines=mat_lines,
-    modeling_time=modeling_time,
-    printing_time=printing_time,
-    assembly_time=assembly_time,
-    magnets_qty=magnets_qty,
-    led_single_qty=led_single_qty,
-    led_desk_qty=led_desk_qty,
-    units_qty=units_qty,
-)
+        st.markdown("---")
+        st.subheader("כמות יחידות")
+        units_qty = st.number_input("כמות יחידות", min_value=0, step=1, value=0, key=f"p{pid}_units_qty")
 
-result = compute(inputs, materials_per_kg, work_per_h, addons_price)
+        inputs = Inputs(
+            project_name=p["name"],
+            materials=mat_lines,
+            modeling_time=modeling_time,
+            printing_time=printing_time,
+            assembly_time=assembly_time,
+            magnets_qty=int(magnets_qty),
+            led_single_qty=int(led_single_qty),
+            led_desk_qty=int(led_desk_qty),
+            units_qty=int(units_qty),
+        )
 
-st.markdown("---")
+        result = compute(inputs, materials_per_kg, work_per_h, addons_price)
+        project_results.append(result)
+        all_breakdowns.append(result["breakdown_df"].assign(פרויקט=p["name"]))
+
+st.subheader("טבלת סיכום מאוחדת")
+if project_results:
+    combined_df = pd.concat(all_breakdowns, ignore_index=True)
+    combined_df = combined_df[combined_df["כמות"].astype(float) != 0].copy()
+    combined_group = combined_df.groupby(["קטגוריה","פריט","יחידה","מחיר ליחידה"], as_index=False).agg({"כמות":"sum","עלות":"sum"})
+    combined_group["כמות"] = combined_group["כמות"].astype(float).round(2)
+
+    combined_view = combined_group[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]].copy()
+    combined_view["מחיר ליחידה"] = combined_view["מחיר ליחידה"].map(currency2)
+    combined_view["עלות"] = combined_view["עלות"].map(currency2)
+
+    total_all = sum(r["total"] for r in project_results)
+    st.metric("סה״כ לכל הפרויקטים", currency(total_all))
+    aggrid_view(combined_view, key="summary_combined", height=420)
+else:
+    st.info("הוסף פרויקט כדי לראות סיכום.")
+
 
 # ---- Summary ----
-st.subheader("טבלת סיכום עלויות וכמויות עם סה\"כ")
+# (סיכומים מוצגים בתוך אזור הפרויקטים והסיכום המאוחד)
 
-# טבלת סיכום (מצומצמת וברורה)
-summary_df = result["breakdown_df"].copy()
-summary_df = summary_df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
-# Round quantities for display (avoid long floats)
-summary_df["כמות"] = summary_df["כמות"].astype(float).round(2)
-summary_df = summary_df[summary_df["כמות"] != 0].reset_index(drop=True)
-
-summary_df["מחיר ליחידה"] = summary_df["מחיר ליחידה"].map(currency2)
-summary_df["עלות"] = summary_df["עלות"].map(currency2)
-
-st.metric("סה״כ", currency(result["total"]))
-st.caption(
-    f"מחיר יחידה (ללא מידול): {currency(result['unit_price'])} | "
-    f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"
-)
-
-aggrid_view(summary_df, key="summary", height=360)
-st.markdown("---")
-
-# ---- Exports (bottom) ----
 st.subheader("ייצוא")
 
-pdf_bytes = render_pdf(result)
-xlsx_bytes = write_back_to_xlsx(wb, inputs, result, materials_per_kg, work_per_h, addons_price)
+# PDF / אקסל רב-פרויקטים
+pdf_bytes = render_pdf_multi(project_results)
+xlsx_bytes = write_multi_to_xlsx(project_results)
 
-st.download_button("הורד PDF", data=pdf_bytes, file_name=f"{project_name}_סיכום.pdf", mime="application/pdf")
-st.download_button("הורד אקסל מעודכן", data=xlsx_bytes, file_name=f"{project_name}_מעודכן.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+# באייפון כששומרים למסך הבית: כדי שלא יעבור למסך תצוגה "בלי דרך חזרה",
+# אנחנו מורידים כ-attachment (octet-stream) ומוסיפים אופציית צפייה בתוך האפליקציה.
+c1, c2 = st.columns(2)
+with c1:
+    st.download_button("הורד PDF", data=pdf_bytes, file_name="הצעת_מחיר_תלת_מימד.pdf", mime="application/octet-stream")
+with c2:
+    st.download_button("הורד אקסל", data=xlsx_bytes, file_name="הצעת_מחיר_תלת_מימד.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+with st.expander("תצוגה בתוך האפליקציה (לא חובה)"):
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="650" style="border:none;"></iframe>'
+    components.html(pdf_html, height=680, scrolling=True)
