@@ -210,6 +210,7 @@ def read_rates_from_sheet(wb: openpyxl.Workbook):
     return materials, work, addons
 
 @dataclass
+@dataclass
 class Inputs:
     project_name: str
     material_lines: list  # list of dicts: {"חומר": str, "גרמים": float}
