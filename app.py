@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import base64
+import html
+import zipfile
 from dataclasses import dataclass
 from datetime import time
 from io import BytesIO
@@ -616,6 +618,37 @@ def write_multi_to_xlsx(results: list) -> bytes:
 
 
 
+
+def render_rtl_html_table(df: pd.DataFrame) -> str:
+    """Stable RTL HTML table for mobile; avoids AgGrid disappearing."""
+    if df is None or df.empty:
+        return '<div style="direction:rtl;text-align:right;padding:0.75rem;border:1px solid #eee;border-radius:10px;">אין שורות להצגה.</div>'
+    headers = list(df.columns)
+    rows_html = []
+    for _, row in df.iterrows():
+        cells = "".join(
+            f'<td style="padding:10px;border:1px solid #e6e6e6;text-align:right;white-space:normal;">{html.escape(str(row[h]))}</td>'
+            for h in headers
+        )
+        rows_html.append(f"<tr>{cells}</tr>")
+    head_html = "".join(
+        f'<th style="padding:10px;border:1px solid #e6e6e6;text-align:right;background:#f7f7f8;font-weight:700;">{html.escape(str(h))}</th>'
+        for h in headers
+    )
+    return (
+        '<div style="direction:rtl;width:100%;overflow-x:auto;margin-top:0.5rem;">'
+        '<table style="width:100%;border-collapse:collapse;direction:rtl;font-size:0.95rem;">'
+        f'<thead><tr>{head_html}</tr></thead>'
+        f'<tbody>{"".join(rows_html)}</tbody>'
+        '</table></div>'
+    )
+
+def zip_pdf_bytes(pdf_bytes: bytes, filename: str = "הצעת_מחיר_תלת_מימד.pdf") -> bytes:
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(filename, pdf_bytes)
+    return out.getvalue()
+
 # ---------------------------
 # UI
 # ---------------------------
@@ -878,7 +911,10 @@ if project_results:
 
     total_all = sum(r["total"] for r in project_results)
     st.metric("סה״כ לכל הפרויקטים", currency(total_all))
-    aggrid_view(combined_view, key="summary_combined", height=420)
+    if combined_view.empty:
+        st.info("אין כרגע שורות עם כמות גדולה מ-0 להצגה.")
+    else:
+        st.markdown(render_rtl_html_table(combined_view), unsafe_allow_html=True)
 else:
     st.info("הוסף פרויקט כדי לראות סיכום.")
 
@@ -888,82 +924,36 @@ else:
 
 st.subheader("ייצוא")
 
-# PDF / אקסל רב-פרויקטים
 pdf_bytes = render_pdf_multi(project_results)
 xlsx_bytes = write_multi_to_xlsx(project_results)
+pdf_zip_bytes = zip_pdf_bytes(pdf_bytes)
 
-# באייפון כששומרים למסך הבית: כדי שלא יעבור למסך תצוגה "בלי דרך חזרה",
-# אנחנו מורידים כ-attachment (octet-stream) ומוסיפים אופציית צפייה בתוך האפליקציה.
+st.caption("באייפון מתוך אייקון במסך הבית מומלץ להוריד את ה‑PDF כ‑ZIP כדי שלא ייפתח מסך Preview בלי כפתור חזרה.")
+
 c1, c2 = st.columns(2)
 with c1:
-    # באייפון כששומרים למסך הבית, "download" על PDF פותח מסך צפייה בלי Back.
-    # לכן אנחנו משתמשים ב‑Web Share API (Share/Save) שמחזיר אותך ישר לאפליקציה אחרי השיתוף.
-    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-    share_html = f"""
-    <div style="direction:rtl; text-align:right;">
-      <button id="sharePdfBtn"
-        style="
-          width:100%;
-          padding:0.6rem 0.9rem;
-          border-radius:0.5rem;
-          border:1px solid rgba(49,51,63,0.2);
-          background:white;
-          font-size:1rem;
-          font-weight:600;
-          cursor:pointer;
-        ">
-        שמירה/שיתוף PDF
-      </button>
-      <div id="shareHint" style="margin-top:0.35rem; font-size:0.85rem; color:rgba(49,51,63,0.7);">
-        נפתח מסך שיתוף (כמו “שמור בקבצים”) בלי לצאת מהאפליקציה.
-      </div>
-    </div>
-    <script>
-    const b64 = "{b64_pdf}";
-    function b64ToBlob(b64Data, contentType) {{
-      const byteCharacters = atob(b64Data);
-      const byteArrays = [];
-      for (let offset = 0; offset < byteCharacters.length; offset += 1024) {{
-        const slice = byteCharacters.slice(offset, offset + 1024);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {{
-          byteNumbers[i] = slice.charCodeAt(i);
-        }}
-        byteArrays.push(new Uint8Array(byteNumbers));
-      }}
-      return new Blob(byteArrays, {{type: contentType}});
-    }}
-
-    document.getElementById("sharePdfBtn").addEventListener("click", async () => {{
-      try {{
-        const blob = b64ToBlob(b64, "application/pdf");
-        const file = new File([blob], "הצעת_מחיר_תלת_מימד.pdf", {{type: "application/pdf"}});
-        if (navigator.canShare && navigator.canShare({{ files: [file] }}) && navigator.share) {{
-          await navigator.share({{ files: [file], title: "הצעת מחיר - הדפסת תלת מימד" }});
-        }} else {{
-          // Fallback: download attribute (may open viewer on iOS)
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "הצעת_מחיר_תלת_מימד.pdf";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
-        }}
-      }} catch (e) {{
-        console.log(e);
-        const el = document.getElementById("shareHint");
-        if (el) el.textContent = "לא הצלחתי לפתוח שיתוף בדפדפן הזה. נסה לפתוח ב‑Safari.";
-      }}
-    }});
-    </script>
-    """
-    components.html(share_html, height=120)
+    st.download_button(
+        "הורד PDF כ‑ZIP לאייפון",
+        data=pdf_zip_bytes,
+        file_name="הצעת_מחיר_תלת_מימד_PDF.zip",
+        mime="application/zip",
+    )
 with c2:
-    st.download_button("הורד אקסל", data=xlsx_bytes, file_name="הצעת_מחיר_תלת_מימד.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button(
+        "הורד אקסל",
+        data=xlsx_bytes,
+        file_name="הצעת_מחיר_תלת_מימד.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
-with st.expander("תצוגה בתוך האפליקציה (לא חובה)"):
+with st.expander("אפשרויות נוספות"):
+    st.download_button(
+        "הורד PDF רגיל",
+        data=pdf_bytes,
+        file_name="הצעת_מחיר_תלת_מימד.pdf",
+        mime="application/pdf",
+    )
+    st.markdown("אם ה‑PDF הרגיל פותח מסך בלי חזרה באייפון, השתמש בכפתור ה‑ZIP למעלה.")
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="650" style="border:none;"></iframe>'
     components.html(pdf_html, height=680, scrolling=True)
