@@ -81,7 +81,7 @@ def he(s: str) -> str:
 
 def ensure_hebrew_font():
     try:
-        pdfmetrics.getFont("DejaVuSans")
+        pdfmetrics.getFont("DejaVu")
         return
     except Exception:
         pass
@@ -90,7 +90,7 @@ def ensure_hebrew_font():
         "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
     ]:
         if Path(fp).exists():
-            pdfmetrics.registerFont(TTFont("DejaVuSans", fp))
+            pdfmetrics.registerFont(TTFont("DejaVu", fp))
             return
 
 def aggrid_editable(df: pd.DataFrame, editable_cols: list, key: str, height: int = None):
@@ -350,16 +350,16 @@ def render_pdf(result: dict) -> bytes:
         c.drawImage(logo_img, x, y - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
     y -= 65*mm
 
-    c.setFont("DejaVuSans", 18)
+    c.setFont("DejaVu", 18)
     c.drawRightString(width - x, y, he("הצעת מחיר - הדפסת תלת מימד"))
     y -= 10*mm
-    c.setFont("DejaVuSans", 12)
+    c.setFont("DejaVu", 12)
     c.drawRightString(width - x, y, he(f"פרויקט: {result['project']}"))
     y -= 8*mm
     c.drawRightString(width - x, y, he(f"תאריך: {pd.Timestamp.now().strftime('%d/%m/%Y')}"))
     y -= 14*mm
 
-    c.setFont("DejaVuSans", 12)
+    c.setFont("DejaVu", 12)
     c.drawRightString(width - x, y, he(f"סה\"כ מידול: {currency(result['modeling_cost'])}"))
     y -= 7*mm
 
@@ -369,7 +369,7 @@ def render_pdf(result: dict) -> bytes:
     y -= 7*mm
     c.drawRightString(width - x, y, he(f"הנחת כמות: {int(result.get('discount_pct', round((1-result['discount'])*100)))}%"))
     y -= 7*mm
-    c.setFont("DejaVuSans", 14)
+    c.setFont("DejaVu", 14)
     c.drawRightString(width - x, y, he(f"סה\"כ: {currency(result['total'])}"))
     y -= 12*mm
 
@@ -377,11 +377,11 @@ def render_pdf(result: dict) -> bytes:
     df = df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
     df = df[df["כמות"].astype(float) != 0].reset_index(drop=True)
 
-    c.setFont("DejaVuSans", 11)
+    c.setFont("DejaVu", 11)
     c.drawRightString(width - x, y, he("פירוט עלויות"))
     y -= 8*mm
 
-    c.setFont("DejaVuSans", 9)
+    c.setFont("DejaVu", 9)
     col_right = {
         "קטגוריה": width - x,
         "פריט": width - x - 32*mm,
@@ -402,7 +402,7 @@ def render_pdf(result: dict) -> bytes:
         if y < 18*mm:
             c.showPage()
             ensure_hebrew_font()
-            c.setFont("DejaVuSans", 9)
+            c.setFont("DejaVu", 9)
             y = height - 20*mm
 
         c.drawRightString(col_right["קטגוריה"], y, he(str(r["קטגוריה"])))
@@ -436,16 +436,16 @@ def render_pdf_multi(results: list) -> bytes:
             logo_h = 60*mm
             c.drawImage(logo_img, x, y - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
         y -= 65*mm
-        c.setFont("DejaVuSans", 18)
+        c.setFont("DejaVu", 18)
         c.drawRightString(width - x, y, he(title))
         y -= 10*mm
-        c.setFont("DejaVuSans", 12)
+        c.setFont("DejaVu", 12)
         c.drawRightString(width - x, y, he(f"תאריך: {pd.Timestamp.now().strftime('%d/%m/%Y')}"))
         y -= 12*mm
         return y
 
     def draw_table(df, y):
-        c.setFont("DejaVuSans", 9)
+        c.setFont("DejaVu", 9)
         col_right = {
             "קטגוריה": width - x,
             "פריט": width - x - 32*mm,
@@ -465,7 +465,7 @@ def render_pdf_multi(results: list) -> bytes:
                 c.showPage()
                 ensure_hebrew_font()
                 y = header("הצעת מחיר - הדפסת תלת מימד")
-                c.setFont("DejaVuSans", 9)
+                c.setFont("DejaVu", 9)
             c.drawRightString(col_right["קטגוריה"], y, he(str(r["קטגוריה"])))
             c.drawRightString(col_right["פריט"], y, he(str(r["פריט"])))
             qty_txt = f'{float(r["כמות"]):.2f}'.rstrip("0").rstrip(".")
@@ -477,7 +477,7 @@ def render_pdf_multi(results: list) -> bytes:
 
     if not results:
         y = header("הצעת מחיר - הדפסת תלת מימד")
-        c.setFont("DejaVuSans", 12)
+        c.setFont("DejaVu", 12)
         c.drawRightString(width - x, y, he("אין פרויקטים לחישוב."))
         c.save()
         return buf.getvalue()
@@ -485,7 +485,7 @@ def render_pdf_multi(results: list) -> bytes:
     # Combined page
     y = header("הצעת מחיר - הדפסת תלת מימד")
     total_all = sum(r["total"] for r in results)
-    c.setFont("DejaVuSans", 14)
+    c.setFont("DejaVu", 14)
     c.drawRightString(width - x, y, he(f"סה\"כ לכל הפרויקטים: {currency(total_all)}"))
     y -= 10*mm
 
@@ -494,7 +494,7 @@ def render_pdf_multi(results: list) -> bytes:
     combined = combined.groupby(["קטגוריה","פריט","יחידה","מחיר ליחידה"], as_index=False).agg({"כמות":"sum","עלות":"sum"})
     combined["כמות"] = combined["כמות"].astype(float).round(2)
 
-    c.setFont("DejaVuSans", 11)
+    c.setFont("DejaVu", 11)
     c.drawRightString(width - x, y, he("פירוט מאוחד"))
     y -= 8*mm
     draw_table(combined, y)
@@ -504,10 +504,10 @@ def render_pdf_multi(results: list) -> bytes:
     # Per-project pages
     for r in results:
         y = header("הצעת מחיר - הדפסת תלת מימד")
-        c.setFont("DejaVuSans", 13)
+        c.setFont("DejaVu", 13)
         c.drawRightString(width - x, y, he(f"פרויקט: {r['project']}"))
         y -= 10*mm
-        c.setFont("DejaVuSans", 12)
+        c.setFont("DejaVu", 12)
         c.drawRightString(width - x, y, he(f"סה\"כ מידול: {currency(r['modeling_cost'])}"))
         y -= 7*mm
         c.drawRightString(width - x, y, he(f"מחיר יחידה (ללא מידול): {currency(r['unit_price'])}"))
@@ -516,7 +516,7 @@ def render_pdf_multi(results: list) -> bytes:
         y -= 7*mm
         c.drawRightString(width - x, y, he(f"הנחת כמות: {int(r.get('discount_pct', 0))}%"))
         y -= 7*mm
-        c.setFont("DejaVuSans", 14)
+        c.setFont("DejaVu", 14)
         c.drawRightString(width - x, y, he(f"סה\"כ: {currency(r['total'])}"))
         y -= 12*mm
 
@@ -524,7 +524,7 @@ def render_pdf_multi(results: list) -> bytes:
         df = df[["קטגוריה","פריט","כמות","יחידה","מחיר ליחידה","עלות"]]
         df = df[df["כמות"].astype(float) != 0].reset_index(drop=True)
 
-        c.setFont("DejaVuSans", 11)
+        c.setFont("DejaVu", 11)
         c.drawRightString(width - x, y, he("פירוט עלויות"))
         y -= 8*mm
         draw_table(df, y)
