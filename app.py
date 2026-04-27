@@ -640,6 +640,30 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 
 
 
+
+
+
+st.markdown(
+    """
+    <style>
+    .price-row-wrap {
+        border: 1px solid rgba(49,51,63,0.16);
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem;
+        margin-bottom: 0.45rem;
+        background: white;
+    }
+    .price-label {
+        font-weight: 600;
+        text-align: right;
+        direction: rtl;
+        padding-top: 0.45rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown(
     """
     <style>
@@ -688,20 +712,61 @@ st.subheader("כותרת ושם פרויקט")
 default_project = ws["H5"].value or "פרויקט"
 project_name = st.text_input("שם פרויקט", value=str(default_project))
 
+
 # ---- מחירים ----
 st.markdown("### מחירים של פילמנטים")
-materials_per_kg = {k: float(v) for k, v in materials_per_kg.items()}
-materials_df = pd.DataFrame([{"חומר": k, "מחיר לק\"ג": v} for k, v in materials_per_kg.items()])
-materials_df = aggrid_editable(materials_df, editable_cols=[COL_PRICE_KG], key="prices_materials", height=205)
-materials_per_kg = {row[COL_MATERIAL]: float(row['מחיר לק"ג'] or 0.0) for _, row in materials_df.iterrows()}
+
+# שימוש ב-number_input רגיל במקום AgGrid כדי שהמחירים תמיד יופיעו ויעבדו באייפון
+updated_materials = {}
+for idx, (mat_name, mat_price) in enumerate(materials_per_kg.items()):
+    c1, c2 = st.columns([1.4, 1])
+    with c1:
+        st.markdown(f'<div class="price-row-wrap"><div class="price-label">{mat_name}</div></div>', unsafe_allow_html=True)
+    with c2:
+        updated_materials[mat_name] = st.number_input(
+            "מחיר לק״ג",
+            min_value=0.0,
+            step=1.0,
+            value=float(mat_price),
+            key=f"price_material_{idx}",
+            label_visibility="collapsed",
+        )
+materials_per_kg = updated_materials
+
 st.markdown("### מחיר עבודה (מידול/הדפסה/הרכבה)")
-work_df = pd.DataFrame([{"סוג": k, "מחיר לשעה": float(v)} for k, v in work_per_h.items()])
-work_df = aggrid_editable(work_df, editable_cols=[COL_PRICE_H], key="prices_work", height=185)
-work_per_h = {row[COL_WORK_TYPE]: float(row[COL_PRICE_H] or 0.0) for _, row in work_df.iterrows()}
+updated_work = {}
+for idx, (work_name, work_price) in enumerate(work_per_h.items()):
+    c1, c2 = st.columns([1.4, 1])
+    with c1:
+        st.markdown(f'<div class="price-row-wrap"><div class="price-label">{work_name}</div></div>', unsafe_allow_html=True)
+    with c2:
+        updated_work[work_name] = st.number_input(
+            "מחיר לשעה",
+            min_value=0.0,
+            step=1.0,
+            value=float(work_price),
+            key=f"price_work_{idx}",
+            label_visibility="collapsed",
+        )
+work_per_h = updated_work
+
 st.markdown("### מחיר תוספות (מגנטים/לד בודד/לד שולחני)")
-addons_df = pd.DataFrame([{"תוספת": k, "מחיר ליחידה": float(v)} for k, v in addons_price.items()])
-addons_df = aggrid_editable(addons_df, editable_cols=[COL_PRICE_UNIT], key="prices_addons", height=185)
-addons_price = {row[COL_ADDON]: float(row[COL_PRICE_UNIT] or 0.0) for _, row in addons_df.iterrows()}
+updated_addons = {}
+for idx, (addon_name, addon_price) in enumerate(addons_price.items()):
+    c1, c2 = st.columns([1.4, 1])
+    with c1:
+        st.markdown(f'<div class="price-row-wrap"><div class="price-label">{addon_name}</div></div>', unsafe_allow_html=True)
+    with c2:
+        updated_addons[addon_name] = st.number_input(
+            "מחיר ליחידה",
+            min_value=0.0,
+            step=1.0,
+            value=float(addon_price),
+            key=f"price_addon_{idx}",
+            label_visibility="collapsed",
+        )
+addons_price = updated_addons
+
 # ---- כמויות ----
 
 st.subheader("פרויקטים")
